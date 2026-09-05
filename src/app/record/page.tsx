@@ -328,7 +328,7 @@ export default function LivingRecordPage() {
                         <h4 className="font-bold text-sm text-slate-900">{m.name}</h4>
                         {isPending ? (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                            Review Required ({m.confidence}%)
+                            Needs Verification
                           </span>
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-teal-100 text-teal-800">

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, MedicalDocument, LabResult, Medication, TimelineEvent, VerificationItem } from "@/lib/db";
-import { extractStructuredData, computeContentHash, DetectedDocType } from "@/lib/extractor";
+import { computeContentHash } from "@/lib/extractor";
+import { extractMedicalDocumentWithGemini, isGeminiConfigured } from "@/lib/gemini";
 import { getActiveSession } from "@/lib/session";
+import type { DetectedDocType } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,14 +43,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Extract structured data
-    const existingMeds = db.getMedications(patientId);
-    const extraction = extractStructuredData(
-      rawText,
+    // Call Gemini multimodal document intelligence (with deterministic fallback)
+    const extraction = await extractMedicalDocumentWithGemini({
+      content: rawText,
+      mimeType: fileType,
       filename,
-      docTypeOverride as DetectedDocType | undefined,
-      existingMeds.length
-    );
+      docTypeOverride: docTypeOverride as DetectedDocType | undefined,
+    });
 
     const docId = `doc_${Date.now()}`;
     const newDoc: MedicalDocument = {
@@ -57,8 +58,8 @@ export async function POST(req: NextRequest) {
       filename,
       fileType,
       docType: extraction.documentType,
-      reportDate: extraction.reportDate,
-      rawText,
+      reportDate: extraction.documentDate || new Date().toISOString().split("T")[0],
+      rawText: typeof rawText === "string" ? rawText.slice(0, 50000) : "",
       fileUrl: `/sample-reports/${filename}`,
       contentHash,
       uploadedAt: new Date().toISOString(),
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     // Save Extracted Lab Results
     const createdLabs: LabResult[] = [];
-    for (const item of extraction.labResults) {
+    for (const item of extraction.tests) {
       const lab: LabResult = {
         id: `lab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         documentId: docId,
@@ -80,13 +81,13 @@ export async function POST(req: NextRequest) {
         unit: item.unit,
         refRangeLow: item.refRangeLow,
         refRangeHigh: item.refRangeHigh,
-        refRangeText: item.refRangeText,
+        refRangeText: item.referenceRange || null,
         status: item.status,
-        statusExplanation: item.statusExplanation,
-        confidence: item.confidence,
+        statusExplanation: item.statusExplanation || `Reported as ${item.value} ${item.unit}`,
+        confidence: 95,
         verificationState: "pending",
         rawSnippet: item.rawSnippet,
-        reportDate: extraction.reportDate,
+        reportDate: extraction.documentDate || newDoc.reportDate,
         sourceDocumentName: filename,
         observation: item.observation,
       };
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
 
     // Save Extracted Medications
     const createdMeds: Medication[] = [];
-    for (const medItem of extraction.medications) {
+    for (const medItem of extraction.medicationsMentioned) {
       const med: Medication = {
         id: `med_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         patientId,
@@ -104,65 +105,69 @@ export async function POST(req: NextRequest) {
         dose: medItem.dose,
         unit: medItem.unit,
         frequency: medItem.frequency,
-        date: extraction.reportDate,
+        date: extraction.documentDate || newDoc.reportDate,
         sourceDocumentId: docId,
         sourceDocumentName: filename,
         source: "extracted",
-        confidence: medItem.confidence,
+        confidence: 90,
         verificationStatus: "pending",
         rawSnippet: medItem.rawSnippet,
       };
       db.addMedication(med);
       createdMeds.push(med);
+    }
 
-      if (medItem.confidence < 85) {
-        db.addVerificationItem({
-          id: `ver_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    // Save Extracted Conditions if explicitly present
+    if (extraction.conditionsMentioned && extraction.conditionsMentioned.length > 0) {
+      for (const condItem of extraction.conditionsMentioned) {
+        db.addCondition({
+          id: `cond_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           patientId,
-          type: "unclear_dosage",
-          title: `Verify Extracted Medication: ${medItem.name}`,
-          description: `Dosage extracted with ${medItem.confidence}% confidence from ${filename}. Please confirm frequency.`,
-          targetType: "medication",
-          targetId: med.id,
+          condition: condItem.condition,
+          diagnosedDate: extraction.documentDate || newDoc.reportDate,
+          status: (condItem.status as any) || "active",
+          source: "extracted",
+          verified: false,
+        });
+      }
+    }
+
+    // Follow-up instructions verification item
+    if (extraction.followUpInstructions && extraction.followUpInstructions.length > 0) {
+      for (const followUp of extraction.followUpInstructions) {
+        db.addVerificationItem({
+          id: `ver_fup_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          patientId,
+          type: "missing_context",
+          title: "Follow-Up Instruction Found in Document",
+          description: followUp.instruction,
+          targetType: "context",
+          targetId: docId,
           status: "pending",
-          confidence: medItem.confidence,
-          sourceSnippet: medItem.rawSnippet,
+          confidence: 95,
+          sourceSnippet: followUp.rawSnippet,
           sourceDocumentName: filename,
           createdAt: new Date().toISOString(),
         });
       }
     }
 
-    // Check if missing context detected
-    if (extraction.missingContextDetected) {
-      db.addVerificationItem({
-        id: `ver_ctx_${Date.now()}`,
-        patientId,
-        type: "missing_context",
-        title: "Missing Clinical Context",
-        description: extraction.missingContextDetected.description,
-        targetType: "context",
-        targetId: docId,
-        status: "pending",
-        confidence: 90,
-        sourceSnippet: extraction.missingContextDetected.phrase,
-        sourceDocumentName: filename,
-        createdAt: new Date().toISOString(),
-      });
-    }
-
     // Register Living Medical Timeline Event
     const outOfRangeCount = createdLabs.filter(
-      l => l.status === "low" || l.status === "high"
+      (l) => l.status === "low" || l.status === "high"
     ).length;
 
     const timelineEvent: TimelineEvent = {
       id: `evt_${Date.now()}`,
       patientId,
-      eventDate: extraction.reportDate,
+      eventDate: extraction.documentDate || newDoc.reportDate,
       eventType: "report_uploaded",
       title: `${extraction.documentType} Uploaded`,
-      description: `${createdLabs.length} biomarker(s) extracted. ${outOfRangeCount > 0 ? `${outOfRangeCount} value(s) outside source ranges.` : "All values within source ranges."}`,
+      description: `${createdLabs.length} biomarker(s) and ${createdMeds.length} medication(s) extracted with Google Gemini. ${
+        outOfRangeCount > 0
+          ? `${outOfRangeCount} value(s) outside documented reference ranges.`
+          : "All values within documented reference ranges."
+      }`,
       category: "labs",
       documentId: docId,
       badge: extraction.documentType,
@@ -176,7 +181,7 @@ export async function POST(req: NextRequest) {
       action: "DOCUMENT_UPLOADED",
       targetType: "medical_document",
       targetId: docId,
-      newValue: `Uploaded ${filename} with ${createdLabs.length} labs and ${createdMeds.length} meds.`,
+      newValue: `Uploaded ${filename} with ${createdLabs.length} labs and ${createdMeds.length} meds. Powered by Gemini.`,
     });
 
     return NextResponse.json({
@@ -185,11 +190,12 @@ export async function POST(req: NextRequest) {
       labResults: createdLabs,
       medications: createdMeds,
       summary: extraction.summary,
+      geminiPowered: isGeminiConfigured(),
     });
   } catch (error) {
-    console.error("Upload error:", error);
+    console.error("Upload route error:", error);
     return NextResponse.json(
-      { error: "Failed to process document. Please try again with a clear copy." },
+      { error: "Failed to process document. Please ensure the file is valid and readable." },
       { status: 500 }
     );
   }

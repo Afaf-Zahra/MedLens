@@ -2,11 +2,22 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { MANDATORY_DISCLAIMER } from "@/lib/safety-pipeline";
 import { getActiveSession } from "@/lib/session";
+import { generateDoctorHandoffWithGemini, detectConflictsWithGemini, isGeminiConfigured } from "@/lib/gemini";
 
 export async function GET() {
   const session = await getActiveSession();
   const patientId = session.patientId;
-  const profile = session.profile;
+  const profile = session.profile || {
+    id: patientId,
+    userId: session.userId,
+    fullName: "Patient",
+    dob: "",
+    sex: "Other",
+    phone: "",
+    emergencyContact: "",
+    isPrivacyMode: false,
+    isOnboarded: true,
+  };
 
   const symptoms = db.getSymptoms(patientId);
   const conditions = db.getConditions(patientId);
@@ -14,9 +25,24 @@ export async function GET() {
   const medications = db.getMedications(patientId);
   const documents = db.getDocuments(patientId);
   const labResults = db.getLabResults(patientId);
-  const conflicts = db.getConflicts(patientId);
-  const verificationItems = db.getVerificationItems(patientId).filter(v => v.status === "pending");
   const timeline = db.getTimelineEvents(patientId);
+
+  const conflicts = await detectConflictsWithGemini({
+    documents,
+    allergies,
+    medications,
+    labResults,
+  });
+
+  const handoffData = await generateDoctorHandoffWithGemini({
+    patientProfile: profile,
+    documents,
+    labResults,
+    medications,
+    allergies,
+    conditions,
+    conflicts,
+  });
 
   return NextResponse.json({
     handoffTimestamp: new Date().toISOString(),
@@ -28,17 +54,20 @@ export async function GET() {
       phone: profile?.phone,
       emergencyContact: profile?.emergencyContact,
     },
+    summary: handoffData.summary,
+    recentRecordChanges: handoffData.recentRecordChanges,
+    documentedConditions: handoffData.documentedConditions,
+    documentedMedications: handoffData.documentedMedications,
+    recordedAllergies: handoffData.recordedAllergies,
+    recentInvestigations: handoffData.recentInvestigations,
+    longitudinalTrends: handoffData.longitudinalTrends,
+    unresolvedConflicts: handoffData.unresolvedConflicts,
+    followUpInstructionsFound: handoffData.followUpInstructionsFound,
+    sourceDocuments: handoffData.sourceDocuments,
+    coverage: handoffData.coverage,
     symptoms,
-    conditions,
-    allergies,
-    medications,
-    recentDocuments: documents.slice(0, 5),
-    labResults,
-    outOfRangeLabResults: labResults.filter(l => l.status === "low" || l.status === "high"),
-    unclassifiedLabResults: labResults.filter(l => l.status === "range_not_provided"),
-    activeConflicts: conflicts.filter(c => c.status === "unresolved"),
-    pendingVerifications: verificationItems,
     timeline: timeline.slice(0, 10),
     disclaimer: MANDATORY_DISCLAIMER,
+    geminiPowered: isGeminiConfigured(),
   });
 }

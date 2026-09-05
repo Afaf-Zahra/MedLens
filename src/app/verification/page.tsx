@@ -251,11 +251,9 @@ export default function VerificationInboxPage() {
                         >
                           {item.type.replace("_", " ")}
                         </span>
-                        {item.confidence && (
-                          <span className="text-[11px] font-medium text-slate-500">
-                            Confidence: {item.confidence}%
-                          </span>
-                        )}
+                        <span className="text-[11px] font-medium text-amber-800">
+                          Awaiting Verification
+                        </span>
                       </div>
                       <span className="text-[11px] text-slate-400">
                         Source: {item.sourceDocumentName || "Document"}

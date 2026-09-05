@@ -274,3 +274,272 @@ export interface ExtractionResult {
   } | null;
   summary: string;
 }
+
+// -------------------------------------------------------------
+// GEMINI & EVIDENCE INTELLIGENCE TYPES
+// -------------------------------------------------------------
+
+export type EvidenceCoverage =
+  | "STRONG RECORD COVERAGE"
+  | "LIMITED RECORD COVERAGE"
+  | "PATIENT PROVIDED"
+  | "NEEDS VERIFICATION"
+  | "CONFLICTING RECORDS"
+  | "INSUFFICIENT EVIDENCE";
+
+export type ProvenanceCategory =
+  | "patient_provided"
+  | "document_extracted"
+  | "clinician_documented"
+  | "system_derived";
+
+export interface EvidenceSourceLink {
+  documentId?: string;
+  documentName: string;
+  reportDate?: string;
+  pageOrSection?: string;
+  snippet?: string;
+  provenance: ProvenanceCategory;
+  coverage: EvidenceCoverage;
+  supportingCount?: number;
+  verificationState?: "confirmed" | "pending" | "edited" | "rejected";
+}
+
+export interface LongitudinalDataPoint {
+  date: string;
+  value: number;
+  unit: string;
+  status: LabStatus;
+  documentId: string;
+  documentName: string;
+  snippet?: string;
+  refRangeText?: string | null;
+  provenance: ProvenanceCategory;
+}
+
+export interface LongitudinalTrend {
+  biomarkerKey: string;
+  displayName: string;
+  unit: string;
+  points: LongitudinalDataPoint[];
+  latestStatus: LabStatus;
+  coverage: EvidenceCoverage;
+  hasSufficientData: boolean;
+}
+
+export interface EvidenceGraphNode {
+  id: string;
+  key: string;
+  displayName: string;
+  category: "measurement" | "medication" | "allergy" | "condition" | "symptom" | "procedure" | "instruction";
+  coverage: EvidenceCoverage;
+  provenance: ProvenanceCategory;
+  supportingDocuments: {
+    documentId: string;
+    documentName: string;
+    reportDate: string;
+    snippet?: string;
+  }[];
+  points?: LongitudinalDataPoint[];
+}
+
+export interface GeminiExplanation {
+  term: string;
+  plainLanguageExplanation: string;
+  whyInRecords: string;
+  whatPatientRecordSays: string;
+  sourceDocumentName?: string;
+  sourceSnippet?: string;
+  coverage: EvidenceCoverage;
+  nonDiagnosticDisclaimer: string;
+}
+
+export interface HealthStoryEvent {
+  id: string;
+  date: string;
+  displayDate: string;
+  title: string;
+  category: "labs" | "medications" | "conditions" | "investigations" | "general";
+  findings: string[];
+  narrative: string;
+  sourceDocuments: string[];
+  documentId?: string;
+  coverage: EvidenceCoverage;
+}
+
+export interface SmartRecordAlert {
+  id: string;
+  type: "out_of_range" | "measurement_changed" | "allergy_conflict" | "medication_difference" | "followup_instruction";
+  severity: "info" | "warning" | "caution";
+  title: string;
+  message: string;
+  sourceDocumentName: string;
+  reportDate: string;
+  coverage: EvidenceCoverage;
+  actionLabel?: string;
+}
+
+export interface WhySeeingThisData {
+  title: string;
+  recordsComparedCount: number;
+  evidenceUsed: {
+    documentName: string;
+    date?: string;
+    finding?: string;
+  }[];
+  reasoning: string;
+  geminiRole: string;
+  medlensRole: string;
+  nonDiagnosticNotice: string;
+}
+
+export interface ConflictDetectiveItem {
+  id: string;
+  title: string;
+  category: "allergy" | "medication" | "lab_result" | "demographic";
+  recordA: {
+    sourceDocumentName: string;
+    reportDate: string;
+    statement: string;
+    snippet?: string;
+  };
+  recordB: {
+    sourceDocumentName: string;
+    reportDate: string;
+    statement: string;
+    snippet?: string;
+  };
+  status: "unresolved" | "reviewed" | "resolved";
+  systemNote: string;
+}
+
+export interface StructuredDocumentExtraction {
+  documentType: DetectedDocType;
+  documentDate?: string;
+  provider?: string;
+  tests: {
+    testName: string;
+    value: number | string;
+    unit: string;
+    referenceRange?: string;
+    refRangeLow?: number | null;
+    refRangeHigh?: number | null;
+    status: LabStatus;
+    statusExplanation?: string;
+    observation?: string;
+    rawSnippet: string;
+    pageOrSection?: string;
+  }[];
+  medicationsMentioned: {
+    name: string;
+    dose: string;
+    unit: string;
+    frequency: string;
+    rawSnippet: string;
+    status?: string;
+  }[];
+  conditionsMentioned: {
+    condition: string;
+    status?: string;
+    rawSnippet: string;
+  }[];
+  symptomsMentioned: {
+    symptom: string;
+    onset?: string;
+    rawSnippet: string;
+  }[];
+  allergiesMentioned: {
+    allergen: string;
+    reaction?: string;
+    rawSnippet: string;
+  }[];
+  followUpInstructions: {
+    instruction: string;
+    timeline?: string;
+    rawSnippet: string;
+  }[];
+  proceduresMentioned: {
+    procedure: string;
+    date?: string;
+    rawSnippet: string;
+  }[];
+  relevantObservations: string[];
+  summary: string;
+}
+
+export interface VisitPrepData {
+  patientName: string;
+  summary: string;
+  recentRecordChanges: {
+    whatChanged: string;
+    detail: string;
+    sourceDocument: string;
+  }[];
+  unresolvedConflicts: {
+    title: string;
+    detail: string;
+  }[];
+  recentInvestigations: {
+    testName: string;
+    value: string | number;
+    unit: string;
+    status: LabStatus;
+    date: string;
+    sourceDocument: string;
+  }[];
+  followUpInstructions: {
+    instruction: string;
+    sourceDocument: string;
+    date: string;
+  }[];
+  documentsToBring: string[];
+  suggestedQuestions: string[];
+  coverage: EvidenceCoverage;
+}
+
+export interface DoctorHandoffData {
+  patientName: string;
+  generatedDate: string;
+  summary: string;
+  recentRecordChanges: string[];
+  documentedConditions: {
+    condition: string;
+    status: string;
+    source: string;
+    date: string;
+  }[];
+  documentedMedications: {
+    name: string;
+    dose: string;
+    frequency: string;
+    source: string;
+    date: string;
+  }[];
+  recordedAllergies: {
+    allergen: string;
+    reaction?: string;
+    source: string;
+  }[];
+  recentInvestigations: {
+    testName: string;
+    value: string | number;
+    unit: string;
+    status: LabStatus;
+    date: string;
+    source: string;
+  }[];
+  longitudinalTrends: {
+    biomarker: string;
+    trendDescription: string;
+    sourceDates: string[];
+  }[];
+  unresolvedConflicts: string[];
+  followUpInstructionsFound: string[];
+  sourceDocuments: {
+    filename: string;
+    date: string;
+    docType: string;
+  }[];
+  coverage: EvidenceCoverage;
+}
+

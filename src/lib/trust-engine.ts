@@ -1,16 +1,26 @@
+/**
+ * MEDLENS TRUST ENGINE
+ * Every extracted fact passes through the Trust Engine before landing in the Living Medical Record.
+ * Replaces arbitrary percentage confidence with calibrated Evidence Coverage and provenance tracking.
+ */
+
+import type { EvidenceCoverage, ProvenanceCategory } from "./types";
+
 export type TrustState = "confirmed" | "needs_verification" | "conflict" | "rejected";
 
 export interface TrustEngineEvaluation {
   trustState: TrustState;
-  score: number; // 0 - 100
+  coverage: EvidenceCoverage;
+  evidenceLabel: string;
+  provenance: ProvenanceCategory;
   factors: {
     sourceType: "user_input" | "extracted" | "ai_generated";
     sourceLabel: string;
     hasSourceDocument: boolean;
-    confidenceScore: number;
     hasReferenceRange: boolean;
     hasConflict: boolean;
     isHumanVerified: boolean;
+    supportingRecordCount: number;
   };
   badge: {
     label: string;
@@ -20,10 +30,6 @@ export interface TrustEngineEvaluation {
   summary: string;
 }
 
-/**
- * MEDLENS TRUST ENGINE
- * Every extracted fact passes through the Trust Engine before landing in the Living Medical Record.
- */
 export function evaluateFactTrust(params: {
   sourceType: "user_input" | "extracted" | "ai_generated";
   confidence?: number;
@@ -32,73 +38,80 @@ export function evaluateFactTrust(params: {
   hasConflict?: boolean;
   isHumanVerified?: boolean;
   isRejected?: boolean;
+  supportingRecordCount?: number;
 }): TrustEngineEvaluation {
   const {
     sourceType,
-    confidence = 90,
     hasSourceDocument = false,
     hasReferenceRange = true,
     hasConflict = false,
     isHumanVerified = false,
     isRejected = false,
+    supportingRecordCount = 1,
   } = params;
 
   if (isRejected) {
     return {
       trustState: "rejected",
-      score: 0,
+      coverage: "INSUFFICIENT EVIDENCE",
+      evidenceLabel: "Rejected by Patient",
+      provenance: "system_derived",
       factors: {
         sourceType,
         sourceLabel: "Rejected Record",
         hasSourceDocument,
-        confidenceScore: 0,
         hasReferenceRange,
         hasConflict,
         isHumanVerified: true,
+        supportingRecordCount: 0,
       },
       badge: {
         label: "Rejected by Patient",
         variant: "slate",
         icon: "alert-circle",
       },
-      summary: "This entry was reviewed and rejected during human verification.",
+      summary: "This entry was reviewed and rejected during patient verification.",
     };
   }
 
   if (hasConflict) {
     return {
       trustState: "conflict",
-      score: 30,
+      coverage: "CONFLICTING RECORDS",
+      evidenceLabel: "Possible conflict",
+      provenance: "system_derived",
       factors: {
         sourceType,
         sourceLabel: "Conflicting Data",
         hasSourceDocument,
-        confidenceScore: confidence,
         hasReferenceRange,
         hasConflict: true,
         isHumanVerified,
+        supportingRecordCount,
       },
       badge: {
-        label: "Conflict Detected",
+        label: "Possible Conflict",
         variant: "coral",
         icon: "shield-alert",
       },
-      summary: "Contradiction detected against existing patient or clinical records. Awaiting human resolution.",
+      summary: "Contradiction detected against existing patient or clinical records. Awaiting patient review.",
     };
   }
 
   if (sourceType === "user_input") {
     return {
       trustState: "confirmed",
-      score: 100,
+      coverage: "PATIENT PROVIDED",
+      evidenceLabel: "Patient provided",
+      provenance: "patient_provided",
       factors: {
         sourceType,
         sourceLabel: "Patient Provided",
         hasSourceDocument: false,
-        confidenceScore: 100,
         hasReferenceRange: true,
         hasConflict: false,
         isHumanVerified: true,
+        supportingRecordCount: 1,
       },
       badge: {
         label: "Patient Provided",
@@ -112,38 +125,43 @@ export function evaluateFactTrust(params: {
   if (sourceType === "ai_generated") {
     return {
       trustState: "needs_verification",
-      score: 75,
+      coverage: supportingRecordCount >= 2 ? "STRONG RECORD COVERAGE" : "LIMITED RECORD COVERAGE",
+      evidenceLabel: `Supported by ${supportingRecordCount} record${supportingRecordCount === 1 ? "" : "s"}`,
+      provenance: "system_derived",
       factors: {
         sourceType,
         sourceLabel: "AI Generated",
         hasSourceDocument,
-        confidenceScore: confidence,
         hasReferenceRange,
         hasConflict: false,
         isHumanVerified,
+        supportingRecordCount,
       },
       badge: {
-        label: "AI Generated Summary",
+        label: "AI Organized Summary",
         variant: "lavender",
         icon: "sparkles",
       },
-      summary: "Synthesized overview generated from verified records. Non-diagnostic.",
+      summary: `Synthesized overview grounded in ${supportingRecordCount} verified record(s). Non-diagnostic.`,
     };
   }
 
   // Extracted from medical document
   if (isHumanVerified) {
+    const label = supportingRecordCount > 1 ? `Supported by ${supportingRecordCount} records` : "Document extracted (Verified)";
     return {
       trustState: "confirmed",
-      score: 98,
+      coverage: supportingRecordCount >= 2 ? "STRONG RECORD COVERAGE" : "LIMITED RECORD COVERAGE",
+      evidenceLabel: label,
+      provenance: "document_extracted",
       factors: {
         sourceType,
-        sourceLabel: "Confirmed Extraction",
+        sourceLabel: "Verified Extraction",
         hasSourceDocument: true,
-        confidenceScore: Math.max(confidence, 95),
         hasReferenceRange,
         hasConflict: false,
         isHumanVerified: true,
+        supportingRecordCount,
       },
       badge: {
         label: "Verified by Patient",
@@ -154,47 +172,50 @@ export function evaluateFactTrust(params: {
     };
   }
 
-  if (confidence < 80 || !hasReferenceRange) {
+  if (!hasReferenceRange) {
     return {
       trustState: "needs_verification",
-      score: confidence,
+      coverage: "NEEDS VERIFICATION",
+      evidenceLabel: "Needs verification",
+      provenance: "document_extracted",
       factors: {
         sourceType,
-        sourceLabel: "Awaiting Review",
+        sourceLabel: "Missing Reference Range",
         hasSourceDocument: true,
-        confidenceScore: confidence,
-        hasReferenceRange,
+        hasReferenceRange: false,
         hasConflict: false,
         isHumanVerified: false,
+        supportingRecordCount,
       },
       badge: {
         label: "Needs Verification",
         variant: "amber",
         icon: "alert-circle",
       },
-      summary: !hasReferenceRange
-        ? "Source document omitted reference range. Review in Verification Inbox."
-        : `Extraction confidence is ${confidence}%. Queued in Verification Inbox.`,
+      summary: "Source document omitted reference range. Queued for patient review.",
     };
   }
 
+  const label = supportingRecordCount > 1 ? `Supported by ${supportingRecordCount} records` : "Document extracted";
   return {
     trustState: "confirmed",
-    score: confidence,
+    coverage: supportingRecordCount >= 2 ? "STRONG RECORD COVERAGE" : "LIMITED RECORD COVERAGE",
+    evidenceLabel: label,
+    provenance: "document_extracted",
     factors: {
       sourceType,
       sourceLabel: "Extracted from Report",
       hasSourceDocument: true,
-      confidenceScore: confidence,
       hasReferenceRange,
       hasConflict: false,
       isHumanVerified: false,
+      supportingRecordCount,
     },
     badge: {
-      label: "Extracted from Report",
+      label: label,
       variant: "teal",
       icon: "check-circle",
     },
-    summary: `Extracted from source document with ${confidence}% confidence.`,
+    summary: `Extracted from source document with calibrated evidence grounding.`,
   };
 }

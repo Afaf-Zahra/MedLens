@@ -16,6 +16,12 @@ import type { LabResult, Medication } from "@/lib/types";
 
 interface SideBySideReviewModalProps {
   item: LabResult | Medication | null;
+  conflictItem?: {
+    title: string;
+    recordA: { sourceDocumentName: string; reportDate: string; statement: string; snippet?: string };
+    recordB: { sourceDocumentName: string; reportDate: string; statement: string; snippet?: string };
+    systemNote: string;
+  } | null;
   isOpen: boolean;
   onClose: () => void;
   onVerificationDone: () => void;
@@ -23,6 +29,7 @@ interface SideBySideReviewModalProps {
 
 export function SideBySideReviewModal({
   item,
+  conflictItem,
   isOpen,
   onClose,
   onVerificationDone,
@@ -33,7 +40,91 @@ export function SideBySideReviewModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  if (!isOpen || !item) return null;
+  if (!isOpen || (!item && !conflictItem)) return null;
+
+  // Conflict view
+  if (conflictItem) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto">
+        <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 flex flex-col my-auto overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-amber-50/60">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 rounded">
+                Gemini Conflict Detective
+              </span>
+              <h3 className="text-sm sm:text-base font-semibold text-slate-900">
+                Possible Record Conflict Review
+              </h3>
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-md">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Conflict Topic</span>
+              <h4 className="text-base font-bold text-slate-900 mt-0.5">{conflictItem.title}</h4>
+              <p className="text-xs text-slate-600 mt-1">{conflictItem.systemNote}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800">
+                  Record A: {conflictItem.recordA.sourceDocumentName}
+                </span>
+                <p className="text-xs font-semibold text-slate-900">{conflictItem.recordA.statement}</p>
+                {conflictItem.recordA.snippet && (
+                  <div className="p-2.5 rounded bg-slate-900 text-teal-300 font-mono text-[11px]">
+                    &ldquo;{conflictItem.recordA.snippet}&rdquo;
+                  </div>
+                )}
+                <span className="text-[10px] text-slate-400 block">Date: {conflictItem.recordA.reportDate}</span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                  Record B: {conflictItem.recordB.sourceDocumentName}
+                </span>
+                <p className="text-xs font-semibold text-slate-900">{conflictItem.recordB.statement}</p>
+                {conflictItem.recordB.snippet && (
+                  <div className="p-2.5 rounded bg-slate-900 text-amber-300 font-mono text-[11px]">
+                    &ldquo;{conflictItem.recordB.snippet}&rdquo;
+                  </div>
+                )}
+                <span className="text-[10px] text-slate-400 block">Date: {conflictItem.recordB.reportDate}</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-600">
+              <strong>MedLens Safety Principle:</strong> Gemini and MedLens do not decide which medical record is correct. Both records are preserved intact for clinical consultation.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  onVerificationDone();
+                  onClose();
+                }}
+                className="px-5 py-2 rounded-md bg-teal-800 hover:bg-teal-900 text-white text-xs font-semibold"
+              >
+                Mark Reviewed
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Single Item Review
+  if (!item) return null;
 
   const isLab = "testName" in item;
   const name = isLab ? item.testName : item.name;
@@ -41,7 +132,6 @@ export function SideBySideReviewModal({
   const initialUnit = item.unit || "";
   const docName = isLab ? item.sourceDocumentName : item.sourceDocumentName || "Report Document";
   const rawSnippet = item.rawSnippet || "Original text snippet";
-  const confidence = item.confidence || 95;
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
@@ -168,11 +258,7 @@ export function SideBySideReviewModal({
               {/* Source Visual Preview Box */}
               <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-3 font-mono text-xs">
                 <div className="text-[10px] text-slate-400 border-b border-slate-100 pb-2">
-                  CLINICAL LABORATORY EXCERPT | PATIENT: ELEANOR VANCE
-                </div>
-                <div className="text-slate-600 line-clamp-3 opacity-60">
-                  SPECIMEN REPORT — AUTOMATED DIFFERENTIAL
-                  METROPOLITAN CLINICAL DIAGNOSTICS
+                  CLINICAL RECORD EXCERPT | VERIFIED EVIDENCE
                 </div>
                 {/* HIGHLIGHTED SNIPPET */}
                 <div className="p-3 rounded-md bg-amber-50 border-l-4 border-amber-500 text-slate-900 font-semibold shadow-xs">
@@ -182,7 +268,7 @@ export function SideBySideReviewModal({
                   &ldquo;{rawSnippet}&rdquo;
                 </div>
                 <div className="text-slate-600 line-clamp-2 opacity-60">
-                  Technician Verified. Instrumentation calibration normal.
+                  Preserved from uploaded medical documentation.
                 </div>
               </div>
             </div>
@@ -201,8 +287,8 @@ export function SideBySideReviewModal({
                   Structured Data Representation
                 </span>
                 <div className="flex items-center gap-1 text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
-                  <Sparkles className="w-3 h-3 text-amber-500" />
-                  <span>{confidence}% Confidence</span>
+                  <Sparkles className="w-3 h-3 text-teal-600" />
+                  <span>Document Extracted</span>
                 </div>
               </div>
 
@@ -263,14 +349,14 @@ export function SideBySideReviewModal({
                   <div className="flex justify-end gap-2 pt-2">
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="px-3 py-1 rounded text-xs font-medium text-slate-600 hover:bg-slate-200"
+                      className="px-3 py-1 rounded text-xs font-medium text-slate-600 hover:bg-slate-200 cursor-pointer"
                     >
                       Cancel Edit
                     </button>
                     <button
                       onClick={handleSaveEdit}
                       disabled={isSubmitting}
-                      className="flex items-center gap-1 px-4 py-1 rounded bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold"
+                      className="flex items-center gap-1 px-4 py-1 rounded bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold cursor-pointer"
                     >
                       <Save className="w-3 h-3" />
                       <span>Save Correction</span>
@@ -285,7 +371,7 @@ export function SideBySideReviewModal({
               <button
                 onClick={handleReject}
                 disabled={isSubmitting}
-                className="flex items-center gap-1 px-3 py-2 rounded-md border border-rose-200 text-rose-800 hover:bg-rose-50 text-xs font-medium transition-colors"
+                className="flex items-center gap-1 px-3 py-2 rounded-md border border-rose-200 text-rose-800 hover:bg-rose-50 text-xs font-medium transition-colors cursor-pointer"
               >
                 <XCircle className="w-3.5 h-3.5" />
                 <span>Reject</span>
@@ -300,7 +386,7 @@ export function SideBySideReviewModal({
                       setIsEditing(true);
                     }}
                     disabled={isSubmitting}
-                    className="flex items-center gap-1 px-3 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-medium"
+                    className="flex items-center gap-1 px-3 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-medium cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     <span>Edit Value</span>

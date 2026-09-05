@@ -171,7 +171,7 @@ export function getWhyMarkedExplanation(params: {
   if (status === "requires_verification") classLabel = "Needs Verification";
 
   return {
-    title: `Why is ${testName} marked ${status.toUpperCase()}?`,
+    title: `Why is ${testName} marked ${(status ?? "unknown").toUpperCase()}?`,
     reportedValue: `${value} ${unit}`.trim(),
     sourceRange: rangeDisplay,
     classification: classLabel,

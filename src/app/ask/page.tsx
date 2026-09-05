@@ -11,15 +11,19 @@ import {
   HelpCircle,
   Clock,
   ExternalLink,
+  BookOpen,
 } from "lucide-react";
 import { Navigation } from "@/components/Navigation";
 import { UploadModal } from "@/components/UploadModal";
-import { maskPII } from "@/lib/utils";
+import { SourcePassportModal } from "@/components/SourcePassportModal";
+import type { EvidenceCoverage } from "@/lib/types";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  citations?: { documentName: string; reportDate: string; snippet: string }[];
+  generalInfo?: string | null;
+  citations?: { documentName: string; reportDate?: string; snippet: string }[];
+  coverage?: EvidenceCoverage;
   isRefusal?: boolean;
   timestamp: string;
 }
@@ -28,8 +32,8 @@ const SAMPLE_GROUNDED_PROMPTS = [
   "When was my latest CBC?",
   "Show my hemoglobin history.",
   "Which reports mention thyroid tests?",
-  "What information still needs verification?",
-  "Where did this medication entry come from?",
+  "What follow-up instructions appear in my records?",
+  "Which records mention my allergies?",
   "Which values were outside their source ranges?",
 ];
 
@@ -44,6 +48,7 @@ export default function AskMyRecordsPage() {
   const [loading, setLoading] = useState(true);
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [passportItem, setPassportItem] = useState<any | null>(null);
 
   const [inputQuery, setInputQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +56,8 @@ export default function AskMyRecordsPage() {
     {
       role: "assistant",
       content:
-        "Hello Eleanor. I am Ask My Records. I can search, organize, and trace facts from your uploaded medical documents. Ask me about your test dates, past lab values, medication sources, or verification items.",
+        "Hello. I am Ask My Records, powered by Google Gemini. I can search, organize, and trace facts from your uploaded medical documents. Ask me about your test dates, past lab values, medication sources, or recorded findings.",
+      coverage: "STRONG RECORD COVERAGE",
       timestamp: "Now",
     },
   ]);
@@ -62,6 +68,16 @@ export default function AskMyRecordsPage() {
       const json = await res.json();
       setData(json);
       setIsPrivacyMode(json.patient?.isPrivacyMode || false);
+      if (json.patient?.fullName) {
+        setMessages((prev) => [
+          {
+            role: "assistant",
+            content: `Hello ${json.patient.fullName}. I am Ask My Records, powered by Google Gemini. I answer questions grounded strictly in your uploaded medical documents with source citations.`,
+            coverage: "STRONG RECORD COVERAGE",
+            timestamp: "Now",
+          },
+        ]);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -108,7 +124,9 @@ export default function AskMyRecordsPage() {
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: resData.answer,
+        generalInfo: resData.generalInfo,
         citations: resData.citations,
+        coverage: resData.coverage,
         isRefusal: resData.refusal,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
@@ -116,6 +134,14 @@ export default function AskMyRecordsPage() {
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (e) {
       console.error(e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "MedLens couldn't process this question right now. Your records remain safe.",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
     } finally {
       setIsSubmitting(false);
     }
@@ -140,23 +166,23 @@ export default function AskMyRecordsPage() {
         <div className="border-b border-slate-200 pb-5">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-900 border border-indigo-200">
-              Grounded Intelligence
+              Google Gemini Record Intelligence
             </span>
             <span className="text-xs text-slate-400">•</span>
-            <span className="text-xs text-slate-500">Record-Grounded Q&A</span>
+            <span className="text-xs text-slate-500 font-medium">Source-Grounded Q&A</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-1">
             Ask My Records
           </h1>
           <p className="text-xs text-slate-600 mt-0.5 max-w-xl">
-            Answers questions grounded <strong>strictly in your MedLens records</strong>. Every fact includes source citations. MedLens never diagnoses diseases or prescribes treatments.
+            Ask questions about your uploaded medical records. Answers are grounded <strong>strictly in your patient documents</strong> with verifiable evidence citations. MedLens is non-diagnostic.
           </p>
         </div>
 
         {/* QUICK PROMPT CHIPS */}
         <div className="space-y-2">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            Grounded Questions:
+            Record-Grounded Questions:
           </span>
           <div className="flex flex-wrap gap-2">
             {SAMPLE_GROUNDED_PROMPTS.map((prompt, i) => (
@@ -172,7 +198,7 @@ export default function AskMyRecordsPage() {
 
           <div className="pt-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Safety Boundary Test Questions (Triggers Non-Diagnostic Guardrail):
+              Safety Boundary Test Questions (Demonstrates Non-Diagnostic Refusal):
             </span>
             <div className="flex flex-wrap gap-2 mt-1">
               {SAMPLE_BOUNDARY_PROMPTS.map((prompt, i) => (
@@ -207,30 +233,69 @@ export default function AskMyRecordsPage() {
                         : "bg-slate-50 border border-slate-200 text-slate-900 rounded-bl-xs"
                     }`}
                   >
+                    {!isUser && (
+                      <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-200/60">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700">
+                          <Sparkles className="w-3.5 h-3.5 text-teal-700" />
+                          <span>Gemini Record Intelligence</span>
+                        </div>
+                        {msg.coverage && (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-900 border border-indigo-200">
+                            {msg.coverage}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {!isUser && msg.isRefusal && (
                       <div className="flex items-center gap-1.5 font-bold text-rose-800 mb-1.5 text-xs">
                         <ShieldCheck className="w-4 h-4 text-rose-600" />
-                        <span>MedLens Safety Boundary Guardrail</span>
+                        <span>MedLens Non-Diagnostic Boundary Notice</span>
                       </div>
                     )}
-                    <p className="whitespace-pre-line">{msg.content}</p>
+
+                    <p className="whitespace-pre-line text-xs sm:text-sm leading-relaxed">{msg.content}</p>
+
+                    {/* SEPARATE GENERAL EDUCATIONAL INFORMATION SECTION */}
+                    {msg.generalInfo && (
+                      <div className="mt-3 p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-900 uppercase text-[10px] tracking-wider">
+                          <BookOpen className="w-3.5 h-3.5 text-amber-700" />
+                          <span>General Information — Not From Your Medical Record</span>
+                        </div>
+                        <p className="text-slate-700 text-xs leading-relaxed">
+                          {msg.generalInfo}
+                        </p>
+                      </div>
+                    )}
 
                     {/* CITATIONS */}
                     {msg.citations && msg.citations.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-1.5">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                          Grounded Citations:
+                          Supporting Evidence Citations ({msg.citations.length}):
                         </span>
                         {msg.citations.map((c, ci) => (
                           <div
                             key={ci}
-                            className="p-2 rounded bg-white border border-slate-200 text-[11px] text-slate-700 font-mono space-y-0.5"
+                            onClick={() => {
+                              setPassportItem({
+                                testName: "Record Citation",
+                                value: c.documentName,
+                                unit: "",
+                                sourceDocumentName: c.documentName,
+                                reportDate: c.reportDate || "Document Date",
+                                rawSnippet: c.snippet,
+                              });
+                            }}
+                            className="p-2 rounded bg-white border border-slate-200 text-[11px] text-slate-700 font-mono space-y-0.5 cursor-pointer hover:border-teal-400 transition-colors"
                           >
                             <div className="flex justify-between font-semibold text-teal-900 font-sans">
                               <span>{c.documentName}</span>
                               <span className="text-slate-400">{c.reportDate}</span>
                             </div>
                             <div className="text-slate-600 line-clamp-1">&ldquo;{c.snippet}&rdquo;</div>
+                            <span className="text-[9px] text-teal-700 font-semibold block pt-0.5">Inspect Source →</span>
                           </div>
                         ))}
                       </div>
@@ -245,7 +310,7 @@ export default function AskMyRecordsPage() {
             {isSubmitting && (
               <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
                 <div className="w-2 h-2 rounded-full bg-teal-700 animate-pulse" />
-                <span>Searching structured records and checking safety boundaries...</span>
+                <span>Searching patient records and verifying grounding with Gemini...</span>
               </div>
             )}
           </div>
@@ -260,7 +325,7 @@ export default function AskMyRecordsPage() {
           >
             <input
               type="text"
-              placeholder="Ask a question about your uploaded records (e.g. When was my latest CBC?)..."
+              placeholder="Ask a question about your uploaded records (e.g. How has my hemoglobin changed?)..."
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
               className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700"
@@ -281,6 +346,12 @@ export default function AskMyRecordsPage() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         onSuccess={() => fetchRecords()}
+      />
+
+      <SourcePassportModal
+        item={passportItem}
+        isOpen={!!passportItem}
+        onClose={() => setPassportItem(null)}
       />
     </div>
   );

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, LabResult } from "@/lib/db";
 import { getActiveSession } from "@/lib/session";
+import { analyzeWhatChangedWithGemini } from "@/lib/gemini";
+import { buildWhySeeingThisData } from "@/lib/evidence-graph";
 
 export interface TestComparisonItem {
   testName: string;
@@ -37,21 +39,24 @@ export async function GET(req: NextRequest) {
 
   const allDocs = db.getDocuments(patientId);
   const matchingDocs = allDocs
-    .filter(d => d.docType.toLowerCase() === docTypeFilter.toLowerCase())
+    .filter((d) => d.docType.toLowerCase() === docTypeFilter.toLowerCase())
     .sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
 
   const allLabs = db.getLabResults(patientId);
+  const allMeds = db.getMedications(patientId);
 
   if (matchingDocs.length === 0) {
     const labDocs = allDocs
-      .filter(d => d.docType !== "Prescription")
+      .filter((d) => d.docType !== "Prescription")
       .sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime());
 
     if (labDocs.length === 0) {
       return NextResponse.json({
         availableDocs: [],
         comparisons: [],
-        safeSummary: "No laboratory reports currently available for longitudinal comparison. Upload medical reports to begin tracking biomarkers across time.",
+        safeSummary:
+          "No laboratory reports currently available for longitudinal comparison. Upload medical reports to begin tracking biomarkers across time.",
+        geminiChanges: [],
       });
     }
   }
@@ -59,14 +64,14 @@ export async function GET(req: NextRequest) {
   const latestDoc = matchingDocs[matchingDocs.length - 1] || allDocs[0];
   const previousDoc = matchingDocs.length >= 2 ? matchingDocs[matchingDocs.length - 2] : null;
 
-  const latestLabs = allLabs.filter(l => l.documentId === latestDoc?.id);
-  const previousLabs = previousDoc ? allLabs.filter(l => l.documentId === previousDoc.id) : [];
+  const latestLabs = allLabs.filter((l) => l.documentId === latestDoc?.id);
+  const previousLabs = previousDoc ? allLabs.filter((l) => l.documentId === previousDoc.id) : [];
 
   const comparisons: TestComparisonItem[] = [];
 
   for (const latestLab of latestLabs) {
     const prevMatch = previousLabs.find(
-      p => p.testName.toLowerCase() === latestLab.testName.toLowerCase()
+      (p) => p.testName.toLowerCase() === latestLab.testName.toLowerCase()
     );
 
     const latestNum = typeof latestLab.value === "number" ? latestLab.value : parseFloat(latestLab.value);
@@ -98,9 +103,9 @@ export async function GET(req: NextRequest) {
     }
 
     const biomarkerHistory = allLabs
-      .filter(l => l.testName.toLowerCase() === latestLab.testName.toLowerCase())
+      .filter((l) => l.testName.toLowerCase() === latestLab.testName.toLowerCase())
       .sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime())
-      .map(l => ({
+      .map((l) => ({
         date: l.reportDate,
         value: typeof l.value === "number" ? l.value : parseFloat(l.value) || 0,
         documentName: l.sourceDocumentName,
@@ -132,33 +137,41 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const matchingCount = comparisons.filter(c => c.previous !== null).length;
-  const normalizedCount = comparisons.filter(c => c.statusShift === "normalized").length;
-  const divergedCount = comparisons.filter(c => c.statusShift === "diverged").length;
-  const normalBothCount = comparisons.filter(
-    c => c.previous?.status === "normal" && c.latest.status === "normal"
-  ).length;
-
   let safeSummary = "";
-  if (!previousDoc) {
+  let geminiChanges: any[] = [];
+
+  if (previousDoc && latestDoc) {
+    const geminiAnalysis = await analyzeWhatChangedWithGemini({
+      previousDoc,
+      latestDoc,
+      labResults: allLabs,
+      medications: allMeds,
+    });
+    safeSummary = geminiAnalysis.comparisonNarrative;
+    geminiChanges = geminiAnalysis.changes;
+  } else if (latestDoc) {
     safeSummary = `One ${latestDoc?.docType || "report"} (${latestDoc?.filename}) is currently recorded with ${latestLabs.length} structured tests. Upload a follow-up or prior report to see side-by-side longitudinal changes.`;
-  } else {
-    safeSummary = `${matchingCount} matching tests were identified across ${previousDoc.filename} (${previousDoc.reportDate}) and ${latestDoc.filename} (${latestDoc.reportDate}). ${normalBothCount} remained within their respective source-provided ranges. ${
-      normalizedCount > 0
-        ? `${normalizedCount} result(s) previously outside its report's range now falls within the range shown in the latest report.`
-        : ""
-    } ${
-      divergedCount > 0
-        ? `${divergedCount} result(s) previously within range now falls outside the printed range of the latest report.`
-        : ""
-    } MedLens notes numeric changes only and does not draw medical conclusions or assign clinical causation.`;
   }
+
+  const whySeeingThis = previousDoc && latestDoc
+    ? buildWhySeeingThisData({
+        title: `What Changed: ${previousDoc.filename} vs ${latestDoc.filename}`,
+        supportingDocuments: [
+          { documentName: previousDoc.filename, date: previousDoc.reportDate },
+          { documentName: latestDoc.filename, date: latestDoc.reportDate },
+        ],
+        reasoning: "Comparative analysis of matching laboratory measurements across sequential dates.",
+        isComparison: true,
+      })
+    : null;
 
   return NextResponse.json({
     latestDoc,
     previousDoc,
-    availableDocTypes: Array.from(new Set(allDocs.map(d => d.docType))),
+    availableDocTypes: Array.from(new Set(allDocs.map((d) => d.docType))),
     comparisons,
     safeSummary,
+    geminiChanges,
+    whySeeingThis,
   });
 }

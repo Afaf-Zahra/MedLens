@@ -15,11 +15,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Upload,
+  HelpCircle,
 } from "lucide-react";
 import { Navigation } from "@/components/Navigation";
 import { UploadModal } from "@/components/UploadModal";
 import { SourcePassportModal } from "@/components/SourcePassportModal";
-import { maskPII, formatDate } from "@/lib/utils";
+import { WhySeeingThisModal } from "@/components/WhySeeingThisModal";
 
 export default function WhatChangedPage() {
   const [data, setData] = useState<any | null>(null);
@@ -30,6 +31,7 @@ export default function WhatChangedPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedTrendBiomarker, setSelectedTrendBiomarker] = useState<string>("Hemoglobin");
   const [passportItem, setPassportItem] = useState<any | null>(null);
+  const [showWhySeeingThis, setShowWhySeeingThis] = useState(false);
 
   const fetchRecords = async () => {
     try {
@@ -76,11 +78,12 @@ export default function WhatChangedPage() {
   const patient = data?.patient;
   const readiness = data?.readiness || { score: 82, breakdown: [] };
   const comparisons = comparisonData?.comparisons || [];
+  const geminiChanges = comparisonData?.geminiChanges || [];
   const latestDoc = comparisonData?.latestDoc;
   const previousDoc = comparisonData?.previousDoc;
   const safeSummary = comparisonData?.safeSummary;
+  const whySeeingThis = comparisonData?.whySeeingThis;
 
-  // Selected biomarker for trend chart
   const activeTrend = comparisons.find(
     (c: any) => c.testName.toLowerCase() === selectedTrendBiomarker.toLowerCase()
   );
@@ -101,23 +104,22 @@ export default function WhatChangedPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-900">
-                Flagship Longitudinal Engine
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-900 border border-teal-200">
+                Google Gemini Record Intelligence
               </span>
               <span className="text-xs text-slate-400">•</span>
-              <span className="text-xs text-slate-500">Non-Diagnostic Delta Engine</span>
+              <span className="text-xs text-slate-500 font-medium">Non-Diagnostic Delta Engine</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-1">
               What Changed Since My Last Report?
             </h1>
             <p className="text-xs text-slate-600 mt-0.5 max-w-2xl">
-              Deterministic comparison across sequential clinical reports. Changes describe numeric shifts only without speculative clinical interpretation.
+              Gemini + deterministic comparison across sequential patient reports. Describes record-supported shifts without speculative diagnosis or assigned clinical causation.
             </p>
           </div>
 
-          {/* Document Type Selector */}
+          {/* Document Type Selector & Transparency Button */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">Compare panel:</span>
             <select
               value={selectedDocType}
               onChange={(e) => {
@@ -131,6 +133,17 @@ export default function WhatChangedPage() {
               <option value="Lipid Profile">Lipid Profile</option>
               <option value="General Laboratory Report">General Reports</option>
             </select>
+
+            {whySeeingThis && (
+              <button
+                type="button"
+                onClick={() => setShowWhySeeingThis(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Why am I seeing this?</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -171,20 +184,92 @@ export default function WhatChangedPage() {
           </div>
         </div>
 
-        {/* SAFE FACTUAL SUMMARY BOX (MANDATED SAFE REPORTING) */}
+        {/* SAFE FACTUAL SUMMARY BOX */}
         {safeSummary && (
           <div className="p-4 rounded-xl bg-slate-100 border border-slate-200 text-xs space-y-2 text-slate-800">
-            <div className="flex items-center gap-2 font-bold text-slate-900">
-              <Sparkles className="w-4 h-4 text-teal-700" />
-              <span>Safe Longitudinal Factual Summary</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-slate-900">
+                <Sparkles className="w-4 h-4 text-teal-700" />
+                <span>Gemini Longitudinal Comparison Summary</span>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase bg-teal-100 text-teal-800">
+                Non-Diagnostic
+              </span>
             </div>
             <p className="text-xs leading-relaxed text-slate-700">
               {safeSummary}
             </p>
-            <div className="pt-1 text-[11px] text-slate-500 italic border-t border-slate-200/60">
-              * Note: If source ranges differ between reports, MedLens displays each range separately and never assumes a single external threshold applies to both.
-            </div>
           </div>
+        )}
+
+        {/* FEATURE 4: STRUCTURED WHAT CHANGED CARDS */}
+        {geminiChanges.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-teal-700" />
+                <span>Documented Changes ({geminiChanges.length} identified)</span>
+              </h2>
+              <span className="text-xs text-slate-500">Traceable to original source reports</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {geminiChanges.map((change: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-800 border border-indigo-200">
+                        {change.coverage || "Strong Record Coverage"}
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">{change.whatChanged}</h4>
+                    <div className="text-xs text-slate-600 space-y-1 pt-1 border-t border-slate-100">
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Previous Record:</span>
+                        <p className="font-medium text-slate-800">{change.previousRecord}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Current Record:</span>
+                        <p className="font-medium text-teal-900">{change.currentRecord}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-[10px] text-slate-500 truncate max-w-[150px]">
+                      {change.sourceDocuments?.join(", ") || "Source reports"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const match = comparisons.find((c: any) =>
+                          change.whatChanged.toLowerCase().includes(c.testName.toLowerCase())
+                        );
+                        if (match) {
+                          setPassportItem({
+                            testName: match.testName,
+                            value: match.latest.value,
+                            unit: match.unit,
+                            status: match.latest.status,
+                            refRangeText: match.latest.refRangeText,
+                            sourceDocumentName: match.latest.documentName,
+                            reportDate: match.latest.reportDate,
+                            rawSnippet: `${match.testName} ${match.latest.value} ${match.unit}`,
+                          });
+                        }
+                      }}
+                      className="text-teal-800 hover:text-teal-900 font-semibold text-xs cursor-pointer"
+                    >
+                      View Evidence →
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* LONGITUDINAL COMPARISON TABLE */}
@@ -193,11 +278,11 @@ export default function WhatChangedPage() {
             <div className="flex items-center gap-2">
               <GitCompare className="w-4 h-4 text-teal-800" />
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Matching Test Comparison ({comparisons.length} biomarkers)
+                Detailed Matching Test Comparison ({comparisons.length} biomarkers)
               </h2>
             </div>
             <span className="text-xs text-slate-500">
-              Side-by-side values & source ranges
+              Side-by-side values & source reference ranges
             </span>
           </div>
 
@@ -208,11 +293,11 @@ export default function WhatChangedPage() {
           ) : comparisons.length === 0 ? (
             <div className="py-12 text-center space-y-3">
               <p className="text-xs text-slate-500">
-                No matching reports found for {selectedDocType}. Upload a follow-up or prior CBC report to see the side-by-side delta.
+                No matching reports found for {selectedDocType}. Upload a follow-up or prior report to see the side-by-side delta.
               </p>
               <button
                 onClick={() => setIsUploadOpen(true)}
-                className="px-4 py-2 rounded-md bg-teal-800 hover:bg-teal-900 text-white text-xs font-semibold"
+                className="px-4 py-2 rounded-md bg-teal-800 hover:bg-teal-900 text-white text-xs font-semibold cursor-pointer"
               >
                 Upload Follow-up Report
               </button>
@@ -338,7 +423,7 @@ export default function WhatChangedPage() {
                         <td className="py-3.5 px-3 text-right">
                           <button
                             onClick={() => setSelectedTrendBiomarker(item.testName)}
-                            className="px-2.5 py-1 rounded text-xs font-semibold text-teal-800 hover:bg-teal-100/60 transition-colors"
+                            className="px-2.5 py-1 rounded text-xs font-semibold text-teal-800 hover:bg-teal-100/60 transition-colors cursor-pointer"
                           >
                             View Trend
                           </button>
@@ -367,13 +452,23 @@ export default function WhatChangedPage() {
               </span>
             </div>
 
-            {/* Simple Visual Trend Track */}
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {activeTrend.trendHistory.map((pt: any, i: number) => (
                   <div
                     key={i}
-                    className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs text-center"
+                    onClick={() => {
+                      setPassportItem({
+                        testName: activeTrend.testName,
+                        value: pt.value,
+                        unit: activeTrend.unit,
+                        status: "normal",
+                        sourceDocumentName: pt.documentName,
+                        reportDate: pt.date,
+                        rawSnippet: `${activeTrend.testName} ${pt.value} ${activeTrend.unit}`,
+                      });
+                    }}
+                    className="p-3 rounded-lg bg-white border border-slate-200 shadow-2xs text-center cursor-pointer hover:border-teal-400 transition-all"
                   >
                     <span className="text-[10px] text-slate-400 block font-mono">
                       {pt.date}
@@ -384,6 +479,7 @@ export default function WhatChangedPage() {
                     <p className="text-[10px] text-slate-500 truncate mt-0.5">
                       {pt.documentName}
                     </p>
+                    <span className="text-[9px] text-teal-700 font-semibold block mt-1">Inspect Source →</span>
                   </div>
                 ))}
               </div>
@@ -413,6 +509,12 @@ export default function WhatChangedPage() {
         item={passportItem}
         isOpen={!!passportItem}
         onClose={() => setPassportItem(null)}
+      />
+
+      <WhySeeingThisModal
+        data={whySeeingThis}
+        isOpen={showWhySeeingThis}
+        onClose={() => setShowWhySeeingThis(false)}
       />
     </div>
   );
