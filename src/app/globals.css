@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --clinical-bg: #FBFBFA;
+    --clinical-card: #FFFFFF;
+    --clinical-ink: #111827;
+    --clinical-muted: #64748B;
+    --clinical-border: #E2E8F0;
+    --clinical-teal: #0F766E;
+    --clinical-teal-light: #F0FDFA;
+    --clinical-teal-border: #99F6E4;
+    --clinical-amber: #D97706;
+    --clinical-amber-light: #FFFBEB;
+    --clinical-amber-border: #FDE68A;
+    --clinical-coral: #BE123C;
+    --clinical-coral-light: #FFF1F2;
+    --clinical-coral-border: #FECDD3;
+    --clinical-lavender: #4F46E5;
+    --clinical-lavender-light: #EEF2FF;
+    --clinical-lavender-border: #C7D2FE;
+  }
+
+  body {
+    background-color: var(--clinical-bg);
+    color: var(--clinical-ink);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom Clinical Design Elements */
+
+/* Verification Ring */
+.verification-ring-pending {
+  position: relative;
+}
+.verification-ring-pending::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1.5px dashed #D97706;
+  opacity: 0.8;
+  animation: rotateSlow 18s linear infinite;
+  pointer-events: none;
+}
+
+.verification-ring-conflict {
+  position: relative;
+}
+.verification-ring-conflict::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1.5px solid #BE123C;
+  animation: pulseGlow 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes rotateSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Timeline Rail */
+.timeline-rail {
+  position: relative;
+}
+.timeline-rail::before {
+  content: '';
+  position: absolute;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1.25rem;
+  width: 2px;
+  background: linear-gradient(180deg, #99F6E4 0%, #E2E8F0 50%, #CBD5E1 100%);
+}
+
+/* Source Connector Line */
+.source-connector-active {
+  box-shadow: 0 0 0 2px #4F46E5, 0 4px 12px -2px rgba(79, 70, 229, 0.15);
+  transition: all 0.2s ease-in-out;
+}
+
+/* Medical Data Ribbon */
+.change-ribbon {
+  background: linear-gradient(90deg, rgba(241, 245, 249, 0.7) 0%, rgba(248, 250, 252, 0.3) 100%);
+  border-left: 3px solid #0F766E;
+}
+
+.change-ribbon-diverged {
+  background: linear-gradient(90deg, rgba(254, 242, 242, 0.8) 0%, rgba(255, 247, 237, 0.3) 100%);
+  border-left: 3px solid #BE123C;
+}
+
+/* Soft Depth */
+.clinical-shadow {
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+}
+
+.clinical-shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+}
+
+.clinical-shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -4px rgba(15, 23, 42, 0.02);
+}
+
+/* Print Optimization for Doctor Handoff */
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+}
